@@ -1,8 +1,3 @@
-"""
-Battery Thermal Models — Detailed Version (1‑D & 2‑D Explicit FDM)
-
-"""
-
 from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,8 +10,7 @@ np.set_printoptions(precision=3, suppress=True)
 plt.style.use("seaborn-v0_8-whitegrid")
 
 
-# 参数与默认物性（以 18650 电芯为例）
-
+# 默认物理属性（以18650电池为例）
 DEFAULT_MATERIAL: Dict[str, float] = {
     "rho": 2400,   # kg/m^3
     "cp":   900,   # J/(kg·K)
@@ -30,7 +24,6 @@ class BCType:
     ADIABATIC = "adiabatic"
     FIXED     = "fixed"
     CONVECT   = "convective"
-
 
 
 class Solver1D:
@@ -53,7 +46,7 @@ class Solver1D:
         self.dx = thickness / nx
         self.dt = dt
         self.steps = int(np.ceil(t_total / dt))
-        self.q_dot = q_dot  # W/m3 或函数 t->W/m3
+        self.q_dot = q_dot
         self.alpha = material["k"] / (material["rho"] * material["cp"])
         self.material = material
         self.bc_left = bc_left
@@ -61,20 +54,19 @@ class Solver1D:
         self.x = np.linspace(0, thickness, nx)
         self.time_hist: list[np.ndarray] = []
 
-     # 初温
+        # 初始化温度
         if init_func is None:
             self.T = np.full(nx, 298.15)
         else:
             self.T = init_func(self.x)
 
-
+        # 计算Fo值，检查是否稳定
         Fo = self.alpha * dt / self.dx ** 2
         if Fo > 0.5:
-            raise ValueError(
-                f"时间步过大导致不稳定：Fo={Fo:.3f}>0.5，应减小 dt 或增大 nx")
-
+            raise ValueError(f"时间步过大导致不稳定：Fo={Fo:.3f}>0.5，应减小 dt 或增大 nx")
 
     def _apply_boundary(self, T_new: np.ndarray):
+        """处理边界条件"""
         # 左边界
         bc_type, val = self.bc_left
         if bc_type == BCType.FIXED:
@@ -86,7 +78,7 @@ class Solver1D:
             k = self.material["k"]
             T_new[0] = (h * self.dx * T_inf + k * T_new[1]) / (h * self.dx + k)
 
-
+        # 右边界
         bc_type, val = self.bc_right
         if bc_type == BCType.FIXED:
             T_new[-1] = val
@@ -97,23 +89,23 @@ class Solver1D:
             k = self.material["k"]
             T_new[-1] = (h * self.dx * T_inf + k * T_new[-2]) / (h * self.dx + k)
 
-
     def step_time(self, t: float):
+        """时间步进，更新温度"""
         T_new = self.T.copy()
         k, rho, cp = self.material["k"], self.material["rho"], self.material["cp"]
         q_val = self.q_dot(t) if callable(self.q_dot) else self.q_dot
         for i in range(1, self.nx - 1):
             T_new[i] = (
                 self.T[i]
-                + self.alpha * self.dt / self.dx ** 2 * (self.T[i+1] - 2*self.T[i] + self.T[i-1])
+                + self.alpha * self.dt / self.dx ** 2 * (self.T[i + 1] - 2 * self.T[i] + self.T[i - 1])
                 + q_val * self.dt / (rho * cp)
             )
 
         self._apply_boundary(T_new)
         self.T[:] = T_new
 
-
     def run(self, record_interval: float = 1.0):
+        """运行求解器，记录温度变化"""
         record_steps = max(1, int(record_interval / self.dt))
         for n in range(self.steps):
             current_time = (n + 1) * self.dt
@@ -122,15 +114,17 @@ class Solver1D:
                 self.time_hist.append(self.T.copy())
         return np.array(self.time_hist)
 
-
     def plot_profiles(self):
+        """绘制温度分布图"""
         plt.figure(figsize=(5, 4))
-        for idx, prof in enumerate(self.time_hist[:: max(len(self.time_hist)//6, 1) ]):
+        for idx, prof in enumerate(self.time_hist[:: max(len(self.time_hist)//6, 1)]):
             label = f"t={idx * len(self.time_hist)//6 * self.dt:.0f}s"
-            plt.plot(self.x*1e3, prof-273.15, label=label)
-        plt.xlabel("Thickness / mm"); plt.ylabel("Temperature / °C")
+            plt.plot(self.x * 1e3, prof - 273.15, label=label)
+        plt.xlabel("Thickness / mm")
+        plt.ylabel("Temperature / °C")
         plt.title("1‑D Temperature Profiles")
-        plt.legend(); plt.tight_layout()
+        plt.legend()
+        plt.tight_layout()
         Path("results").mkdir(exist_ok=True)
         plt.savefig("results/thermal_1d_profiles.png", dpi=300)
         plt.show()
@@ -164,7 +158,6 @@ class Solver2D:
         self.bc_type = bc_type
         self.bc_value = bc_value
 
-
         self.x = np.linspace(0, width, nx)
         self.y = np.linspace(0, height, ny)
         X, Y = np.meshgrid(self.x, self.y)
@@ -173,15 +166,15 @@ class Solver2D:
         else:
             self.T = init_func(X, Y)
 
-
-        coef = self.alpha * dt * (1/self.dx**2 + 1/self.dy**2)
+        # 检查稳定性
+        coef = self.alpha * dt * (1 / self.dx**2 + 1 / self.dy**2)
         if coef > 0.5:
             raise ValueError(f"时间步导致2‑D显式不稳定：coef={coef:.3f}>0.5")
 
         self.time_hist: list[np.ndarray] = []
 
-
     def _apply_boundary(self, T_new: np.ndarray):
+        """应用边界条件"""
         if self.bc_type == BCType.FIXED:
             T_new[0, :] = T_new[-1, :] = T_new[:, 0] = T_new[:, -1] = self.bc_value
         elif self.bc_type == BCType.ADIABATIC:
@@ -190,27 +183,26 @@ class Solver2D:
             T_new[:, 0] = T_new[:, 1]
             T_new[:, -1] = T_new[:, -2]
 
-
-
     def step_time(self, t: float):
+        """时间步进，更新温度场"""
         Tn = self.T.copy()
         T_new = Tn.copy()
         q_val = self.q_dot(t) if callable(self.q_dot) else self.q_dot
         k, rho, cp = self.material["k"], self.material["rho"], self.material["cp"]
 
-        T_new[1:-1,1:-1] = (
-            Tn[1:-1,1:-1]
+        T_new[1:-1, 1:-1] = (
+            Tn[1:-1, 1:-1]
             + self.alpha * self.dt * (
-                (Tn[2:,1:-1] - 2*Tn[1:-1,1:-1] + Tn[:-2,1:-1]) / self.dx**2
-                + (Tn[1:-1,2:]   - 2*Tn[1:-1,1:-1] + Tn[1:-1,:-2]) / self.dy**2
+                (Tn[2:, 1:-1] - 2 * Tn[1:-1, 1:-1] + Tn[:-2, 1:-1]) / self.dx**2
+                + (Tn[1:-1, 2:] - 2 * Tn[1:-1, 1:-1] + Tn[1:-1, :-2]) / self.dy**2
             )
             + q_val * self.dt / (rho * cp)
         )
         self._apply_boundary(T_new)
         self.T[:] = T_new
 
-
     def run(self, record_interval: float = 1.0):
+        """运行求解器，记录温度场的变化"""
         record_steps = max(1, int(record_interval / self.dt))
         for n in range(self.steps):
             current_time = (n + 1) * self.dt
@@ -219,21 +211,20 @@ class Solver2D:
                 self.time_hist.append(self.T.copy())
         return np.array(self.time_hist)
 
-
     def plot_snapshot(self, idx: int = -1):
+        """绘制温度分布快照"""
         plt.figure(figsize=(5, 4))
         temp_C = self.time_hist[idx] - 273.15
-        plt.imshow(temp_C, origin="lower", extent=[0, self.W*1000, 0, self.H*1000], cmap="hot")
+        plt.imshow(temp_C, origin="lower", extent=[0, self.W * 1000, 0, self.H * 1000], cmap="hot")
         plt.colorbar(label="T / °C")
-        plt.xlabel("mm"); plt.ylabel("mm")
+        plt.xlabel("mm")
+        plt.ylabel("mm")
         t = idx * self.dt
         plt.title(f"2‑D Temperature Map (t={t:.0f}s)")
-        plt.tight_layout(); Path("results").mkdir(exist_ok=True)
+        plt.tight_layout()
+        Path("results").mkdir(exist_ok=True)
         plt.savefig(f"results/thermal_2d_snapshot_{idx}.png", dpi=300)
         plt.show()
-
-
-
 
 
 def main():
@@ -250,11 +241,10 @@ def main():
         bc_right=(BCType.CONVECT, (10, 298.15)),
     )
 
-
     hist_1d = solver1d.run(record_interval=5)
     solver1d.plot_profiles()
 
-
+    # ---------------- 2‑D ----------------
     solver2d = Solver2D(
         width=0.02,
         height=0.02,
@@ -269,17 +259,19 @@ def main():
     solver2d.run(record_interval=2)
     solver2d.plot_snapshot(idx=-1)
 
-
+    # 保存数据
     np.savez(
         "results/thermal_simulation.npz",
         x_1d=solver1d.x,
-        t_hist_1d=np.arange(len(solver1d.time_hist))*5,
+        t_hist_1d=np.arange(len(solver1d.time_hist)) * 5,
         temp_hist_1d=hist_1d,
         temp_final_2d=solver2d.time_hist[-1],
         x_2d=solver2d.x,
         y_2d=solver2d.y,
     )
-    print("仿真完成，总耗时 %.2f s" % (time.time()-start))
+
+    print("仿真完成，总耗时 %.2f s" % (time.time() - start))
+
 
 if __name__ == "__main__":
     main()
