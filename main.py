@@ -17,9 +17,7 @@ DEFAULT_MATERIAL: Dict[str, float] = {
     "k":    1.5,   # W/(m·K)
 }
 
-# -----------------------------------------------------------------------------
-# 边界条件类型枚举
-# -----------------------------------------------------------------------------
+# 边界条件类型
 class BCType:
     ADIABATIC = "adiabatic"
     FIXED     = "fixed"
@@ -230,7 +228,7 @@ class Solver2D:
 def main():
     Path("results").mkdir(exist_ok=True)
     start = time.time()
-    # ---------------- 1‑D ----------------
+    #1‑D 
     solver1d = Solver1D(
         thickness=1e-3,
         nx=60,
@@ -244,7 +242,7 @@ def main():
     hist_1d = solver1d.run(record_interval=5)
     solver1d.plot_profiles()
 
-    # ---------------- 2‑D ----------------
+    # 2‑D
     solver2d = Solver2D(
         width=0.02,
         height=0.02,
