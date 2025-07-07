@@ -10,19 +10,17 @@ np.set_printoptions(precision=3, suppress=True)
 plt.style.use("seaborn-v0_8-whitegrid")
 
 
-# 默认物理属性（以18650电池为例）
+# 以18650电池为例
 DEFAULT_MATERIAL: Dict[str, float] = {
-    "rho": 2400,   # kg/m^3
-    "cp":   900,   # J/(kg·K)
-    "k":    1.5,   # W/(m·K)
+    "rho": 2400,   
+    "cp":   900,   
+    "k":    1.5, 
 }
 
-# 边界条件类型
 class BCType:
     ADIABATIC = "adiabatic"
     FIXED     = "fixed"
     CONVECT   = "convective"
-
 
 class Solver1D:
     """显式差分 1‑D 求解器"""
@@ -52,20 +50,17 @@ class Solver1D:
         self.x = np.linspace(0, thickness, nx)
         self.time_hist: list[np.ndarray] = []
 
-        # 初始化温度
         if init_func is None:
             self.T = np.full(nx, 298.15)
         else:
             self.T = init_func(self.x)
 
-        # 计算Fo值，检查是否稳定
         Fo = self.alpha * dt / self.dx ** 2
         if Fo > 0.5:
             raise ValueError(f"时间步过大导致不稳定：Fo={Fo:.3f}>0.5，应减小 dt 或增大 nx")
 
     def _apply_boundary(self, T_new: np.ndarray):
         """处理边界条件"""
-        # 左边界
         bc_type, val = self.bc_left
         if bc_type == BCType.FIXED:
             T_new[0] = val
@@ -76,7 +71,6 @@ class Solver1D:
             k = self.material["k"]
             T_new[0] = (h * self.dx * T_inf + k * T_new[1]) / (h * self.dx + k)
 
-        # 右边界
         bc_type, val = self.bc_right
         if bc_type == BCType.FIXED:
             T_new[-1] = val
@@ -164,7 +158,6 @@ class Solver2D:
         else:
             self.T = init_func(X, Y)
 
-        # 检查稳定性
         coef = self.alpha * dt * (1 / self.dx**2 + 1 / self.dy**2)
         if coef > 0.5:
             raise ValueError(f"时间步导致2‑D显式不稳定：coef={coef:.3f}>0.5")
@@ -257,7 +250,6 @@ def main():
     solver2d.run(record_interval=2)
     solver2d.plot_snapshot(idx=-1)
 
-    # 保存数据
     np.savez(
         "results/thermal_simulation.npz",
         x_1d=solver1d.x,
